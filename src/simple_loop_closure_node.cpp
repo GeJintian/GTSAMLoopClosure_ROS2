@@ -1,6 +1,6 @@
 #include <simple_loop_closure/simple_loop_closure_node.hpp>
    
-class SimpleLoopClosureNode
+class SimpleLoopClosureNode : public rclcpp::Node
 {
 private:
   typedef pcl::PointXYZI PointType;
@@ -14,18 +14,15 @@ private:
   typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::PointCloud2, nav_msgs::Odometry> SyncPolicy;
   typedef message_filters::Synchronizer<SyncPolicy> Sync;
 
-  ros::NodeHandle nh_;
-  ros::NodeHandle nh_private_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_map_cloud_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_vis_pose_graph_;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_pgo_odometry_;
 
-  ros::Publisher pub_map_cloud_;
-  ros::Publisher pub_vis_pose_graph_;
-  ros::Publisher pub_pgo_odometry_;
-
-  message_filters::Subscriber<sensor_msgs::PointCloud2> sub_cloud_;
-  message_filters::Subscriber<nav_msgs::Odometry> sub_odom_;
+  std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>> sub_cloud_;
+  std::shared_ptr<message_filters::Subscriber<nav_msgs::msg::Odometry>> sub_odom_;
   std::shared_ptr<Sync> synchronizer_;
 
-  ros::Subscriber sub_save_req_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr sub_save_req_;
 
   std_msgs::ColorRGBA odom_edge_color_;
   std_msgs::ColorRGBA loop_edge_color_;
@@ -84,38 +81,54 @@ private:
   
   void initialize()
   {
-    nh_ = ros::NodeHandle();
-    nh_private_ = ros::NodeHandle("~");
 
-    pub_map_cloud_ = nh_.advertise<sensor_msgs::PointCloud2>("/pgo_map_cloud", 1);
-    pub_vis_pose_graph_ = nh_.advertise<visualization_msgs::MarkerArray>("/vis_pose_graph", 1);
-    pub_pgo_odometry_ = nh_.advertise<nav_msgs::Odometry>("/pgo_odom", 1);
+    pub_map_cloud_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/pgo_map_cloud", 1);
+    pub_vis_pose_graph_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/vis_pose_graph", 1);
+    pub_pgo_odometry_ = this->create_publisher<nav_msgs::msg::Odometry>("/pgo_odom", 1);
     
-    mapped_cloud_ = nh_private_.param("mapped_cloud", true);
-    time_stamp_tolerance_ = nh_private_.param("time_stamp_tolerance", 0.01);
-    keyframe_dist_th_ = nh_private_.param("keyframe_dist_th", 0.3);
-    keyframe_angular_dist_th_ = nh_private_.param("keyframe_angular_dist_th", 0.2);
-    loop_search_time_diff_th_ = nh_private_.param("loop_search_time_diff_th", 30.0);
-    loop_search_dist_diff_th_ = nh_private_.param("loop_search_dist_diff_th", 30.0);
-    loop_search_angular_dist_th_ = nh_private_.param("loop_search_angular_dist_th", 3.14);
-    loop_search_frame_interval_ = nh_private_.param("loop_search_frame_interval", 1);
-    search_radius_ = nh_private_.param("search_radius", 15.0);
+    this->declare_parameter("mapped_cloud", true);
+    this->get_parameter("mapped_cloud", mapped_cloud_);
+    this->declare_parameter("time_stamp_tolerance", 0.01);
+    this->get_parameter("time_stamp_tolerance", time_stamp_tolerance_);
+
+    this->declare_parameter("keyframe_dist_th", 0.3);
+    this->get_parameter("keyframe_dist_th", keyframe_dist_th_);
+    this->declare_parameter("keyframe_angular_dist_th", 0.2);
+    this->get_parameter("keyframe_angular_dist_th", keyframe_angular_dist_th_);
+    this->declare_parameter("loop_search_time_diff_th", 30.0);
+    this->get_parameter("loop_search_time_diff_th", loop_search_time_diff_th_);
+    this->declare_parameter("loop_search_dist_diff_th", 30.0);
+    this->get_parameter("loop_search_dist_diff_th", loop_search_dist_diff_th_);
+    this->declare_parameter("loop_search_angular_dist_th", 3.14);
+    this->get_parameter("loop_search_angular_dist_th", loop_search_angular_dist_th_);
+    this->declare_parameter("loop_search_frame_interval", 1);
+    this->get_parameter("loop_search_frame_interval", loop_search_frame_interval_);
+    this->declare_parameter("search_radius", 15.0);
+    this->get_parameter("search_radius", search_radius_);
     search_radius_ *= search_radius_;
-    target_frame_num_ = nh_private_.param("target_frame_num", 50);
-    target_voxel_leaf_size_ = nh_private_.param("target_voxel_leaf_size", 0.4);
-    source_voxel_leaf_size_ = nh_private_.param("source_voxel_leaf_size", 0.4);
-    vis_map_voxel_leaf_size_ = nh_private_.param("vis_map_voxel_leaf_size", 0.8);
-    fitness_score_th_ = nh_private_.param("fitness_score_th", 0.3);
-    vis_map_cloud_frame_interval_ = nh_private_.param("vis_map_cloud_frame_interval", 3);
-    
-    sub_cloud_.subscribe(nh_, "/cloud", 50);
-    sub_odom_.subscribe(nh_, "/odometry", 50);
+    this->declare_parameter("target_frame_num", 50);
+    this->get_parameter("target_frame_num", target_frame_num_);
 
-    synchronizer_.reset(new Sync(SyncPolicy(50), sub_cloud_, sub_odom_));
-    synchronizer_->setMaxIntervalDuration(ros::Duration(time_stamp_tolerance_));
-    synchronizer_->registerCallback(boost::bind(&SimpleLoopClosureNode::pointCloudAndOdometryCallback, this, _1, _2));
+    this->declare_parameter("target_voxel_leaf_size", 0.4);
+    this->get_parameter("target_voxel_leaf_size", target_voxel_leaf_size_);
+    this->declare_parameter("source_voxel_leaf_size", 0.4);
+    this->get_parameter("source_voxel_leaf_size", source_voxel_leaf_size_);
+    this->declare_parameter("vis_map_voxel_leaf_size", 0.8);
+    this->get_parameter("vis_map_voxel_leaf_size", vis_map_voxel_leaf_size_);
+    this->declare_parameter("fitness_score_th", 0.3);
+    this->get_parameter("fitness_score_th", fitness_score_th_);
+    this->declare_parameter("vis_map_cloud_frame_interval", 3);
+    this->get_parameter("vis_map_cloud_frame_interval", vis_map_cloud_frame_interval_);
+
+    sub_cloud_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>(this, "/cloud");
+    sub_odom_ = std::make_shared<message_filters::Subscriber<nav_msgs::msg::Odometry>>(this, "/odometry");
+
+    synchronizer_.reset(new Sync(SyncPolicy(50), *sub_cloud_, *sub_odom_));
+    synchronizer_->setMaxIntervalDuration(rclcpp::Duration(time_stamp_tolerance_));
+    synchronizer_->registerCallback(boost::bind(&SimpleLoopClosureNode::pointCloudAndOdometryCallback, this, std::placeholders::_1, std::placeholders::_2));
     
     sub_save_req_  = nh_.subscribe<std_msgs::String>("/save_req", 1, &SimpleLoopClosureNode::saveRequestCallback, this);
+    sub_save_req_ = this->create_subscription<std_msgs::msg::String>("/save_req", 1, std::bind(&SimpleLoopClosureNode::saveRequestCallback, this, std::placeholders::_1));
     
     icp_.setMaximumIterations(50);
     icp_.setMaxCorrespondenceDistance(search_radius_ * 2.0);
@@ -389,7 +402,7 @@ private:
 
     sensor_msgs::PointCloud2 map_cloud_msg;
     pcl::toROSMsg(map_cloud_ds_, map_cloud_msg);
-    map_cloud_msg.header.stamp = ros::Time::now();
+    map_cloud_msg.header.stamp = rclcpp::Clock::now();
     map_cloud_msg.header.frame_id = odom_frame_id_;
 
     pub_map_cloud_.publish(map_cloud_msg);
@@ -497,7 +510,7 @@ private:
       return;
 
     std_msgs::Header header;
-    header.stamp = ros::Time::now();
+    header.stamp = rclcpp:Clock::now();
     header.frame_id = odom_frame_id_;
 
     visualization_msgs::MarkerArray marker_array_msg;
@@ -511,8 +524,8 @@ private:
 
   void visualizeThread()
   {
-    ros::Rate rate(1);
-    while(ros::ok() && !stop_visualize_thread_)
+    rclcpp::Rate rate(1);
+    while(rclcpp::ok() && !stop_visualize_thread_)
     {
       PointCloudType::Ptr map_cloud = constructPointCloudMap(vis_map_cloud_frame_interval_);
       publishMapCloud(map_cloud);
@@ -602,7 +615,7 @@ private:
     return true;
   }
 
-  int searchTarget(const KDTree &kdtree, const int &id_query, const Eigen::Affine3d &pose_query, const ros::Time &stamp_query)
+  int searchTarget(const KDTree &kdtree, const int &id_query, const Eigen::Affine3d &pose_query, const rclcpp::Clock &stamp_query)
   {
     NanoFlannSearchResult search_result;
     search_result.reserve(1000);
@@ -615,7 +628,7 @@ private:
     for(int i = 0; i < search_result.size(); i++)
     {
       int tmp_id = search_result[i].first;
-      ros::Time tmp_stamp = pcl_conversions::fromPCL(keyframes_cloud_copied_[tmp_id]->header.stamp);
+      rclcpp::Clock tmp_stamp = pcl_conversions::fromPCL(keyframes_cloud_copied_[tmp_id]->header.stamp);
       double time_diff = std::fabs(stamp_query.toSec() - tmp_stamp.toSec());
 
       Eigen::Affine3d affine_target;
@@ -721,7 +734,7 @@ private:
     for(int i = searched_loop_id_; i < keyframes_cloud_copied_.size(); i += (loop_search_frame_interval_ + 1))
     {
       Eigen::Affine3d pose_query = optimized_pose_last * (keyframes_odom_copied_[optimized_pose_id_last]->inverse() * (*keyframes_odom_copied_[i]));
-      ros::Time stamp_query = pcl_conversions::fromPCL(keyframes_cloud_copied_[i]->header.stamp);
+      rclcpp::Clock stamp_query = pcl_conversions::fromPCL(keyframes_cloud_copied_[i]->header.stamp);
 
       int target_id = searchTarget(kdtree, i, pose_query, stamp_query);
 
@@ -780,8 +793,8 @@ private:
 
   void loopCloseThread()
   {
-    ros::Rate rate(1);
-    while (ros::ok() && !stop_loop_closure_thread_)
+    rclcpp::Rate rate(1);
+    while (rclcpp::ok() && !stop_loop_closure_thread_)
     {
       gtsam::NonlinearFactorGraph graph;
       gtsam::Values init_estimate;
@@ -812,7 +825,7 @@ public:
     std::thread visualize_thread(&SimpleLoopClosureNode::visualizeThread, this);
 
     ROS_INFO("Loop Closure Started");
-    ros::spin();
+    rclcpp::spin();
 
     stop_loop_closure_thread_ = true;
     stop_visualize_thread_ = true;
@@ -826,9 +839,9 @@ public:
  
 int main(int argc, char **argv)
 {
-  ros::init(argc, argv, "simple_loop_closure");
-  SimpleLoopClosureNode loop_closure_node;
-  loop_closure_node.spin();
-
+  rclcpp::init(argc, argv, "simple_loop_closure");
+  auto loop_closure_node = std::make_shared<SimpleLoopClosureNode>();
+  loop_closure_node->spin();
+  rclcpp::shutdown();
   return 0;
 }
