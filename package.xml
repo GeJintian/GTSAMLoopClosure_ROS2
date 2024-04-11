@@ -1,10 +1,11 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>GTSAM_loop_closure</name>
+  <name>gtsam_loop_closure</name>
   <version>0.0.0</version>
-  <description>The GTSAM_loop_closure_ROS2 package</description>
+  <description>The gtsam_loop_closure_ROS2 package</description>
 
   <maintainer email="main@todo.todo">main</maintainer>
+  <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   

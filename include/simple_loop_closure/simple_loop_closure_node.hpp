@@ -8,9 +8,10 @@
 #include "std_msgs/msg/string.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
+#include "visualization_msgs/msg/marker.hpp"
 #include <message_filters/subscriber.h>
 #include <message_filters/sync_policies/approximate_time.h>
-#include <eigen_conversions/eigen_msg.h>
+#include <tf2_eigen/tf2_eigen.h>
 
 #include <Eigen/Dense>
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(GTSAM_loop_closure)
+project(gtsam_loop_closure)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 14)
@@ -38,6 +38,7 @@ include_directories(
   ${rclcpp_INCLUDE_DIRS}
   ${pcl_ros_INCLUDE_DIRS} 
   ${pcl_conversions_INCLUDE_DIRS}
+  ${GTSAM_INCLUDE_DIR}
 )
 
 add_executable(${PROJECT_NAME}_node src/simple_loop_closure_node.cpp)

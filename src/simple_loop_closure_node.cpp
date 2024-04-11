@@ -11,7 +11,7 @@ private:
   typedef nanoflann::KDTreeEigenMatrixAdaptor<KDTreeMatrix, 3, nanoflann::metric_L2_Simple> KDTree;
   typedef std::vector<nanoflann::ResultItem<long int, double>> NanoFlannSearchResult;
   typedef std::pair<int, int> LoopEdgeID;
-  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::PointCloud2, nav_msgs::Odometry> SyncPolicy;
+  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2, nav_msgs::msg::Odometry> SyncPolicy;
   typedef message_filters::Synchronizer<SyncPolicy> Sync;
 
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_map_cloud_;
@@ -24,9 +24,9 @@ private:
 
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr sub_save_req_;
 
-  std_msgs::ColorRGBA odom_edge_color_;
-  std_msgs::ColorRGBA loop_edge_color_;
-  std_msgs::ColorRGBA node_color_;
+  std_msgs::msg::ColorRGBA odom_edge_color_;
+  std_msgs::msg::ColorRGBA loop_edge_color_;
+  std_msgs::msg::ColorRGBA node_color_;
   double edge_scale_;
   double node_scale_;
 
@@ -86,7 +86,7 @@ private:
     pub_vis_pose_graph_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/vis_pose_graph", 1);
     pub_pgo_odometry_ = this->create_publisher<nav_msgs::msg::Odometry>("/pgo_odom", 1);
     
-    this->declare_parameter("mapped_cloud", true);
+    this->declare_parameter("mapped_cloud", false);
     this->get_parameter("mapped_cloud", mapped_cloud_);
     this->declare_parameter("time_stamp_tolerance", 0.01);
     this->get_parameter("time_stamp_tolerance", time_stamp_tolerance_);
@@ -120,14 +120,14 @@ private:
     this->declare_parameter("vis_map_cloud_frame_interval", 3);
     this->get_parameter("vis_map_cloud_frame_interval", vis_map_cloud_frame_interval_);
 
-    sub_cloud_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>(this, "/cloud");
-    sub_odom_ = std::make_shared<message_filters::Subscriber<nav_msgs::msg::Odometry>>(this, "/odometry");
+    sub_cloud_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>(this, "/velodyne_points");
+    sub_odom_ = std::make_shared<message_filters::Subscriber<nav_msgs::msg::Odometry>>(this, "/kiss/odometry");
 
     synchronizer_.reset(new Sync(SyncPolicy(50), *sub_cloud_, *sub_odom_));
-    synchronizer_->setMaxIntervalDuration(rclcpp::Duration(time_stamp_tolerance_));
-    synchronizer_->registerCallback(boost::bind(&SimpleLoopClosureNode::pointCloudAndOdometryCallback, this, std::placeholders::_1, std::placeholders::_2));
+    synchronizer_->setMaxIntervalDuration(rclcpp::Duration(std::chrono::duration<double>(time_stamp_tolerance_)));
+
+    synchronizer_->registerCallback(std::bind(&SimpleLoopClosureNode::pointCloudAndOdometryCallback, this, std::placeholders::_1, std::placeholders::_2));
     
-    sub_save_req_  = nh_.subscribe<std_msgs::String>("/save_req", 1, &SimpleLoopClosureNode::saveRequestCallback, this);
     sub_save_req_ = this->create_subscription<std_msgs::msg::String>("/save_req", 1, std::bind(&SimpleLoopClosureNode::saveRequestCallback, this, std::placeholders::_1));
     
     icp_.setMaximumIterations(50);
@@ -225,7 +225,7 @@ private:
       Eigen::Vector3d trans = pose.translation();
       pcl::io::savePCDFileBinary(frames_directory + frame_filename_str.str(), copied_cloud);
       poses_csv_file << std::fixed << i << ", "
-                     << pcl_conversions::fromPCL(copied_cloud.header.stamp).toSec() << ", "
+                     << pcl_conversions::fromPCL(copied_cloud.header.stamp).seconds() << ", "
                      << trans.x() << ", " << trans.y() << ", " << trans.z() << ", "
                      << quat.x() << ", " << quat.y() << ", " << quat.z() << ", " << quat.w() << std::endl;
     }
@@ -241,11 +241,11 @@ private:
     
     if(map_cloud == NULL)
     {
-      ROS_WARN_STREAM("Point cloud map is empty.");
+      RCLCPP_WARN_STREAM(rclcpp::get_logger("GTSAMLOOPCLOSURE"),"Point cloud map is empty.");
     }
     else if(map_cloud->empty())
     {
-      ROS_WARN_STREAM("Point cloud map is empty.");
+      RCLCPP_WARN_STREAM(rclcpp::get_logger("GTSAMLOOPCLOSURE"),"Point cloud map is empty.");
     }
     else
     {
@@ -254,21 +254,21 @@ private:
           throw std::runtime_error("Save failed");
         }
         pcl::io::savePCDFileBinary(save_directory_ + "map.pcd", *map_cloud);
-        ROS_INFO_STREAM("Save completed.");
+        RCLCPP_INFO_STREAM(rclcpp::get_logger("GTSAMLOOPCLOSURE"),"Save completed.");
       }
       catch(...){
-        ROS_WARN_STREAM("Save failed.");
+        RCLCPP_WARN_STREAM(rclcpp::get_logger("GTSAMLOOPCLOSURE"),"Save failed.");
       }
     }
 
     saving_ = false;
   }
 
-  void saveRequestCallback(const std_msgs::String::ConstPtr &directory)
+  void saveRequestCallback(const std_msgs::msg::String::ConstPtr &directory)
   {
     if(saving_ == true)
     {
-      ROS_WARN_STREAM("Already in process. Request is denied.");
+      RCLCPP_WARN_STREAM(rclcpp::get_logger("GTSAMLOOPCLOSURE"),"Already in process. Request is denied.");
       return;
     }
 
@@ -276,7 +276,7 @@ private:
     if(save_directory_.back() != '/')
       save_directory_ += '/';
 
-    ROS_INFO_STREAM("Start Saving.");
+    RCLCPP_INFO_STREAM(rclcpp::get_logger("GTSAMLOOPCLOSURE"),"Start Saving.");
     if(save_thread_.joinable())
       save_thread_.join();
 
@@ -284,7 +284,7 @@ private:
     save_thread_ = std::thread(&SimpleLoopClosureNode::saveThread, this);
   }
 
-  void publishPoseGraphOptimizedOdometry(const Eigen::Affine3d &affine_curr, const nav_msgs::Odometry &odom_msg)
+  void publishPoseGraphOptimizedOdometry(const Eigen::Affine3d &affine_curr, const nav_msgs::msg::Odometry &odom_msg)
   {
     Eigen::Affine3d pgo_affine;
 
@@ -302,18 +302,23 @@ private:
       pgo_affine = affine_curr;
     }
 
-    nav_msgs::Odometry pgo_odom_msg = odom_msg;
-    tf::poseEigenToMsg(pgo_affine, pgo_odom_msg.pose.pose);
-    pub_pgo_odometry_.publish(pgo_odom_msg);
+    nav_msgs::msg::Odometry pgo_odom_msg = odom_msg;
+    pgo_odom_msg.pose.pose=tf2::toMsg(pgo_affine);
+    pub_pgo_odometry_->publish(pgo_odom_msg);
   }
 
-  void pointCloudAndOdometryCallback(const sensor_msgs::PointCloud2::ConstPtr &cloud_msg,const nav_msgs::Odometry::ConstPtr &odom_msg)
+  void pointCloudAndOdometryCallback(const sensor_msgs::msg::PointCloud2::ConstPtr &cloud_msg,const nav_msgs::msg::Odometry::ConstPtr &odom_msg)
   {
     PointCloudType::Ptr cloud_curr(new PointCloudType);
     pcl::fromROSMsg(*cloud_msg, *cloud_curr);
 
+    geometry_msgs::msg::TransformStamped transform_stamped;
+    transform_stamped.transform.translation.x = odom_msg->pose.pose.position.x;
+    transform_stamped.transform.translation.y = odom_msg->pose.pose.position.y;
+    transform_stamped.transform.translation.z = odom_msg->pose.pose.position.z;
+    transform_stamped.transform.rotation = odom_msg->pose.pose.orientation;
     Affine3dPtr affine_curr(new Eigen::Affine3d);
-    tf::poseMsgToEigen(odom_msg->pose.pose, *affine_curr);
+    *affine_curr=tf2::transformToEigen(transform_stamped);
 
     publishPoseGraphOptimizedOdometry(*affine_curr, *odom_msg);
 
@@ -400,22 +405,22 @@ private:
     vg_map_.setInputCloud(map_cloud);
     vg_map_.filter(map_cloud_ds_);
 
-    sensor_msgs::PointCloud2 map_cloud_msg;
+    sensor_msgs::msg::PointCloud2 map_cloud_msg;
     pcl::toROSMsg(map_cloud_ds_, map_cloud_msg);
-    map_cloud_msg.header.stamp = rclcpp::Clock::now();
+    map_cloud_msg.header.stamp = rclcpp::Clock(RCL_ROS_TIME).now();
     map_cloud_msg.header.frame_id = odom_frame_id_;
 
-    pub_map_cloud_.publish(map_cloud_msg);
+    pub_map_cloud_->publish(map_cloud_msg);
   }
 
-  void constructVisualizationOdometryEdges(const int &res_size, const std_msgs::Header &header, visualization_msgs::Marker &marker_msg)
+  void constructVisualizationOdometryEdges(const int &res_size, const std_msgs::msg::Header &header, visualization_msgs::msg::Marker &marker_msg)
   {
     marker_msg.header = header;
     marker_msg.ns = "odom_edges";
-    marker_msg.action = visualization_msgs::Marker::ADD;
+    marker_msg.action = visualization_msgs::msg::Marker::ADD;
     marker_msg.pose.orientation.w = 1.0;
     marker_msg.id = 0;
-    marker_msg.type = visualization_msgs::Marker::LINE_LIST;
+    marker_msg.type = visualization_msgs::msg::Marker::LINE_LIST;
     marker_msg.scale.x = edge_scale_;
     marker_msg.color = odom_edge_color_;
 
@@ -426,7 +431,7 @@ private:
       gtsam::Pose3 pose1 = optimization_result_.at<gtsam::Pose3>(i);
       gtsam::Pose3 pose2 = optimization_result_.at<gtsam::Pose3>(i + 1);
       
-      geometry_msgs::Point p1, p2;
+      geometry_msgs::msg::Point p1, p2;
       p1.x = pose1.x(); p1.y = pose1.y(); p1.z = pose1.z();
       p2.x = pose2.x(); p2.y = pose2.y(); p2.z = pose2.z();
       marker_msg.points.emplace_back(p1);
@@ -434,7 +439,7 @@ private:
     }
   }
   
-  void constructVisualizationLoopEdges(const int &res_size, const std_msgs::Header &header, visualization_msgs::Marker &marker_msg)
+  void constructVisualizationLoopEdges(const int &res_size, const std_msgs::msg::Header &header, visualization_msgs::msg::Marker &marker_msg)
   {
     int edge_num;
     {
@@ -444,10 +449,10 @@ private:
 
     marker_msg.header = header;
     marker_msg.ns = "loop_edges";
-    marker_msg.action = visualization_msgs::Marker::ADD;
+    marker_msg.action = visualization_msgs::msg::Marker::ADD;
     marker_msg.pose.orientation.w = 1.0;
     marker_msg.id = 0;
-    marker_msg.type = visualization_msgs::Marker::LINE_LIST;
+    marker_msg.type = visualization_msgs::msg::Marker::LINE_LIST;
     marker_msg.scale.x = edge_scale_;
     marker_msg.color = loop_edge_color_;
 
@@ -465,7 +470,7 @@ private:
       gtsam::Pose3 pose1 = optimization_result_.at<gtsam::Pose3>(id1);
       gtsam::Pose3 pose2 = optimization_result_.at<gtsam::Pose3>(id2);
       
-      geometry_msgs::Point p1, p2;
+      geometry_msgs::msg::Point p1, p2;
       p1.x = pose1.x(); p1.y = pose1.y(); p1.z = pose1.z();
       p2.x = pose2.x(); p2.y = pose2.y(); p2.z = pose2.z();
       marker_msg.points.emplace_back(p1);
@@ -473,14 +478,14 @@ private:
     }
   }
   
-  void constructVisualizationNodes(const int &res_size, const std_msgs::Header &header, visualization_msgs::Marker &marker_msg)
+  void constructVisualizationNodes(const int &res_size, const std_msgs::msg::Header &header, visualization_msgs::msg::Marker &marker_msg)
   {
     marker_msg.header = header;
     marker_msg.ns = "nodes";
-    marker_msg.action = visualization_msgs::Marker::ADD;
+    marker_msg.action = visualization_msgs::msg::Marker::ADD;
     marker_msg.pose.orientation.w = 1.0;
     marker_msg.id = 0;
-    marker_msg.type = visualization_msgs::Marker::SPHERE_LIST;
+    marker_msg.type = visualization_msgs::msg::Marker::SPHERE_LIST;
     marker_msg.scale.x = node_scale_;
     marker_msg.scale.y = node_scale_;
     marker_msg.scale.z = node_scale_;
@@ -492,7 +497,7 @@ private:
       MtxLockGuard guard(mtx_res_);
       gtsam::Pose3 pose1 = optimization_result_.at<gtsam::Pose3>(i);
       
-      geometry_msgs::Point p1;
+      geometry_msgs::msg::Point p1;
       p1.x = pose1.x(); p1.y = pose1.y(); p1.z = pose1.z();
       marker_msg.points.emplace_back(p1);
     }
@@ -509,17 +514,17 @@ private:
     if(optimization_result_size <= 0)
       return;
 
-    std_msgs::Header header;
-    header.stamp = rclcpp:Clock::now();
+    std_msgs::msg::Header header;
+    header.stamp = rclcpp::Clock(RCL_ROS_TIME).now();
     header.frame_id = odom_frame_id_;
 
-    visualization_msgs::MarkerArray marker_array_msg;
+    visualization_msgs::msg::MarkerArray marker_array_msg;
     marker_array_msg.markers.resize(3);
     constructVisualizationOdometryEdges(optimization_result_size, header, marker_array_msg.markers[0]);
     constructVisualizationLoopEdges(optimization_result_size, header, marker_array_msg.markers[1]);
     constructVisualizationNodes(optimization_result_size, header, marker_array_msg.markers[2]);
 
-    pub_vis_pose_graph_.publish(marker_array_msg);
+    pub_vis_pose_graph_->publish(marker_array_msg);
   }
 
   void visualizeThread()
@@ -615,7 +620,7 @@ private:
     return true;
   }
 
-  int searchTarget(const KDTree &kdtree, const int &id_query, const Eigen::Affine3d &pose_query, const rclcpp::Clock &stamp_query)
+  int searchTarget(const KDTree &kdtree, const int &id_query, const Eigen::Affine3d &pose_query, const rclcpp::Time &stamp_query)
   {
     NanoFlannSearchResult search_result;
     search_result.reserve(1000);
@@ -628,8 +633,8 @@ private:
     for(int i = 0; i < search_result.size(); i++)
     {
       int tmp_id = search_result[i].first;
-      rclcpp::Clock tmp_stamp = pcl_conversions::fromPCL(keyframes_cloud_copied_[tmp_id]->header.stamp);
-      double time_diff = std::fabs(stamp_query.toSec() - tmp_stamp.toSec());
+      rclcpp::Time tmp_stamp = pcl_conversions::fromPCL(keyframes_cloud_copied_[tmp_id]->header.stamp);
+      double time_diff = std::fabs(stamp_query.seconds() - tmp_stamp.seconds());
 
       Eigen::Affine3d affine_target;
       {
@@ -734,7 +739,7 @@ private:
     for(int i = searched_loop_id_; i < keyframes_cloud_copied_.size(); i += (loop_search_frame_interval_ + 1))
     {
       Eigen::Affine3d pose_query = optimized_pose_last * (keyframes_odom_copied_[optimized_pose_id_last]->inverse() * (*keyframes_odom_copied_[i]));
-      rclcpp::Clock stamp_query = pcl_conversions::fromPCL(keyframes_cloud_copied_[i]->header.stamp);
+      rclcpp::Time stamp_query = pcl_conversions::fromPCL(keyframes_cloud_copied_[i]->header.stamp);
 
       int target_id = searchTarget(kdtree, i, pose_query, stamp_query);
 
@@ -760,7 +765,7 @@ private:
 
       Eigen::Affine3d pose_diff = registration_result.inverse() * (target_pose);
       graph.add(gtsam::BetweenFactor<gtsam::Pose3>(i, target_id, gtsam::Pose3(pose_diff.matrix()), constraint_noise));
-      ROS_INFO_STREAM("Loop Detected:" << i << " -> " << target_id);
+      RCLCPP_INFO_STREAM(rclcpp::get_logger("GTSAMLOOPCLOSURE"),"Loop Detected:" << i << " -> " << target_id);
 
       {
         MtxLockGuard guard(mtx_res_);
@@ -809,7 +814,7 @@ private:
   }
 
 public:
-  SimpleLoopClosureNode()
+  SimpleLoopClosureNode():Node("GTSAM_loop_closure_node")
   {
     initialize();
   }
@@ -824,8 +829,8 @@ public:
     std::thread loop_close_thread(&SimpleLoopClosureNode::loopCloseThread, this);
     std::thread visualize_thread(&SimpleLoopClosureNode::visualizeThread, this);
 
-    ROS_INFO("Loop Closure Started");
-    rclcpp::spin();
+    RCLCPP_INFO(rclcpp::get_logger("GTSAMLOOPCLOSURE"),"Loop Closure Started");
+    rclcpp::spin(shared_from_this());
 
     stop_loop_closure_thread_ = true;
     stop_visualize_thread_ = true;
@@ -839,7 +844,7 @@ public:
  
 int main(int argc, char **argv)
 {
-  rclcpp::init(argc, argv, "simple_loop_closure");
+  rclcpp::init(argc, argv);
   auto loop_closure_node = std::make_shared<SimpleLoopClosureNode>();
   loop_closure_node->spin();
   rclcpp::shutdown();
