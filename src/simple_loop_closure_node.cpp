@@ -287,7 +287,7 @@ private:
   void publishPoseGraphOptimizedOdometry(const Eigen::Affine3d &affine_curr, const nav_msgs::msg::Odometry &odom_msg)
   {
     Eigen::Affine3d pgo_affine;
-
+    std::cout<<"publishing odom"<<std::endl;
     Eigen::Affine3d optimized_pose_last;
     int optimized_pose_id_last;
     getLastOptimizedPose(optimized_pose_last, optimized_pose_id_last);
@@ -305,13 +305,14 @@ private:
     nav_msgs::msg::Odometry pgo_odom_msg = odom_msg;
     pgo_odom_msg.pose.pose=tf2::toMsg(pgo_affine);
     pub_pgo_odometry_->publish(pgo_odom_msg);
+    std::cout<<"finish pub"<<std::endl;
   }
 
   void pointCloudAndOdometryCallback(const sensor_msgs::msg::PointCloud2::ConstPtr &cloud_msg,const nav_msgs::msg::Odometry::ConstPtr &odom_msg)
   {
     PointCloudType::Ptr cloud_curr(new PointCloudType);
     pcl::fromROSMsg(*cloud_msg, *cloud_curr);
-
+    std::cout<<"receiving point cloud and odom"<<std::endl;
     geometry_msgs::msg::TransformStamped transform_stamped;
     transform_stamped.transform.translation.x = odom_msg->pose.pose.position.x;
     transform_stamped.transform.translation.y = odom_msg->pose.pose.position.y;
@@ -357,6 +358,7 @@ private:
       keyframes_cloud_.push_back(cloud_curr);
       keyframes_odom_.push_back(affine_curr);
     }
+    std::cout<<"finish pointcloud callback"<<std::endl;
   }
 
   PointCloudType::Ptr constructPointCloudMap(const int interval = 0)
