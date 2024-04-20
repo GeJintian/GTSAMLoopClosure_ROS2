@@ -1,6 +1,6 @@
 # GTSAMLoopClosure_ROS2
 ## Overview
-This repository is a ROS implementation of Loop Closure for LiDAR SLAM, modified from [SimpleLoopClosure](https://github.com/kamibukuro5656/SimpleLoopClosure).  
+This repository is a ROS2 implementation of Loop Closure for LiDAR SLAM, modified from [SimpleLoopClosure](https://github.com/kamibukuro5656/SimpleLoopClosure).  
 It is a simple implementation using pose graph optimization with GTSAM and radius search with nanoflann.  
 It was created to obtain Loop Closed point cloud maps from an algorithm that provides only LiDAR odometry.  
 
